@@ -61,8 +61,6 @@ class _AssetsPageState extends State<AssetsPage> {
                   setState(() {
                     searchQuery = query;
                   });
-                  _assetsBloc
-                      .fetchAssets(widget.companyId); // Recarregar com pesquisa
                 },
               ),
             ),
@@ -74,16 +72,12 @@ class _AssetsPageState extends State<AssetsPage> {
                   filterEnergySensor = selected;
                   searchQuery = ""; // Ignorar o campo de pesquisa
                 });
-                _assetsBloc
-                    .fetchAssets(widget.companyId); // Recarregar com filtro
               },
               onFilterCriticalChanged: (selected) {
                 setState(() {
                   filterCritical = selected;
                   searchQuery = ""; // Ignorar o campo de pesquisa
                 });
-                _assetsBloc
-                    .fetchAssets(widget.companyId); // Recarregar com filtro
               },
             ),
             BlocBuilder<AssetsBloc, AssetsState>(
@@ -122,14 +116,13 @@ class _AssetsPageState extends State<AssetsPage> {
   }
 
   // Função para realizar a pesquisa e aplicar os filtros
-  List<NodeEntity> _filterAndSearchNodes(List<NodeEntity> nodes,
-      String searchQuery, bool filterEnergySensor, bool filterCritical) {
+  List<NodeEntity> _filterAndSearchNodes(
+      List<NodeEntity> nodes, String searchQuery, bool filterEnergySensor, bool filterCritical) {
     List<NodeEntity> filteredNodes = [];
 
     for (var node in nodes) {
       // Verifica se o filtro de sensor de energia ou crítico está ativado
-      final bool shouldIgnoreSearch =
-          filterEnergySensor || filterCritical;
+      final bool shouldIgnoreSearch = filterEnergySensor || filterCritical;
 
       // Verifica se o nome do nó corresponde à pesquisa, se não estivermos ignorando
       final matchesSearch = !shouldIgnoreSearch &&
@@ -138,17 +131,14 @@ class _AssetsPageState extends State<AssetsPage> {
 
       // Verifica se os componentes do nó correspondem aos filtros
       final matchesComponentFilters = node.components?.any((component) {
-        if (filterEnergySensor &&
-            component.sensorType == SensorType.energy) {
+        if (filterEnergySensor && component.sensorType == SensorType.energy) {
           return true;
         }
         if (filterCritical && component.status == Status.alert) {
           return true;
         }
         if (!shouldIgnoreSearch &&
-            component.name
-                .toLowerCase()
-                .contains(searchQuery.toLowerCase())) {
+            component.name.toLowerCase().contains(searchQuery.toLowerCase())) {
           return true; // Inclui componentes na busca por nome
         }
         return false;
@@ -163,15 +153,17 @@ class _AssetsPageState extends State<AssetsPage> {
         filterCritical,
       );
 
-      // Se o nó ou seus filhos/comopnentes correspondem, adiciona-o à lista filtrada
+      final componentMatches = _filterRootComponents(node.components ?? [], searchQuery, filterEnergySensor, filterCritical);
+
+      // Se o nó ou seus componentes ou seus filhos corresponderem, adiciona à lista filtrada
       if (matchesSearch || matchesComponentFilters || childMatches.isNotEmpty) {
         filteredNodes.add(
           NodeEntity(
             id: node.id,
             name: node.name,
             type: node.type,
-            nodes: childMatches.isNotEmpty ? childMatches : node.nodes,
-            components: node.components,
+            nodes: childMatches,
+            components: componentMatches,
           ),
         );
       }
@@ -298,8 +290,7 @@ class AssetNode extends StatefulWidget {
   State<AssetNode> createState() => _AssetNodeState();
 }
 
-class _AssetNodeState extends State<AssetNode>
-    with SingleTickerProviderStateMixin {
+class _AssetNodeState extends State<AssetNode> with SingleTickerProviderStateMixin {
   bool _isExpanded = false; // Controla o estado de expansão
   late final AnimationController _controller; // Controlador da animação
 
@@ -384,8 +375,7 @@ class _AssetNodeState extends State<AssetNode>
               children: widget.node.nodes!.map((child) {
                 return AssetNode(
                   node: child,
-                  depth:
-                  widget.depth + 1, // Aumenta a indentação para os filhos
+                  depth: widget.depth + 1, // Aumenta a indentação para os filhos
                 );
               }).toList(),
             ),
@@ -430,7 +420,7 @@ class ComponentTile extends StatelessWidget {
         leading: Icon(
           component.sensorType == SensorType.energy
               ? Icons.bolt
-              : Icons.settings,
+              : Icons.vibration,
           color:
           component.status == Status.operating ? Colors.green : Colors.red,
         ),
