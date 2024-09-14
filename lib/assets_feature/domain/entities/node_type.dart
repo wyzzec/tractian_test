@@ -1,0 +1,1 @@
+enum NodeType {location, asset}
