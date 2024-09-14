@@ -36,6 +36,18 @@ class _AssetsPageState extends State<AssetsPage> {
     super.dispose();
   }
 
+  void _onSearchChanged(String query) {
+    setState(() {
+      searchQuery = query;
+    });
+    _assetsBloc.searchAssets(
+      query,
+      widget.companyId,
+      filterEnergySensor: filterEnergySensor,
+      filterCritical: filterCritical,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -57,11 +69,7 @@ class _AssetsPageState extends State<AssetsPage> {
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: SearchBar(
-                onSearchChanged: (query) {
-                  setState(() {
-                    searchQuery = query;
-                  });
-                },
+                onSearchChanged: _onSearchChanged,
               ),
             ),
             FilterRow(
@@ -70,13 +78,15 @@ class _AssetsPageState extends State<AssetsPage> {
               onFilterEnergySensorChanged: (selected) {
                 setState(() {
                   filterEnergySensor = selected;
-                  searchQuery = ""; // Ignorar o campo de pesquisa
+                  _onSearchChanged(
+                      searchQuery); // Aplica o filtro junto à pesquisa
                 });
               },
               onFilterCriticalChanged: (selected) {
                 setState(() {
                   filterCritical = selected;
-                  searchQuery = ""; // Ignorar o campo de pesquisa
+                  _onSearchChanged(
+                      searchQuery); // Aplica o filtro junto à pesquisa
                 });
               },
             ),
@@ -86,21 +96,12 @@ class _AssetsPageState extends State<AssetsPage> {
                 if (state is AssetsLoading) {
                   return const Center(child: CircularProgressIndicator());
                 } else if (state is AssetsLoaded) {
-                  final filteredNodes = _filterAndSearchNodes(
-                    state.assets.nodes,
-                    searchQuery,
-                    filterEnergySensor,
-                    filterCritical,
-                  );
-                  final filteredRootComponents = _filterRootComponents(
-                    state.assets.components,
-                    searchQuery,
-                    filterEnergySensor,
-                    filterCritical,
-                  );
                   return AssetTree(
-                    nodes: filteredNodes,
-                    components: filteredRootComponents,
+                    nodes: state.assets.nodes,
+                    components: state.assets.components,
+                    isSearching: filterEnergySensor ||
+                        filterCritical ||
+                        searchQuery.isNotEmpty,
                   );
                 } else if (state is AssetsError) {
                   return Center(child: Text(state.message));
@@ -113,83 +114,6 @@ class _AssetsPageState extends State<AssetsPage> {
         ),
       ),
     );
-  }
-
-  // Função para realizar a pesquisa e aplicar os filtros
-  List<NodeEntity> _filterAndSearchNodes(
-      List<NodeEntity> nodes, String searchQuery, bool filterEnergySensor, bool filterCritical) {
-    List<NodeEntity> filteredNodes = [];
-
-    for (var node in nodes) {
-      // Verifica se o filtro de sensor de energia ou crítico está ativado
-      final bool shouldIgnoreSearch = filterEnergySensor || filterCritical;
-
-      // Verifica se o nome do nó corresponde à pesquisa, se não estivermos ignorando
-      final matchesSearch = !shouldIgnoreSearch &&
-          (searchQuery.isEmpty ||
-              node.name.toLowerCase().contains(searchQuery.toLowerCase()));
-
-      // Verifica se os componentes do nó correspondem aos filtros
-      final matchesComponentFilters = node.components?.any((component) {
-        if (filterEnergySensor && component.sensorType == SensorType.energy) {
-          return true;
-        }
-        if (filterCritical && component.status == Status.alert) {
-          return true;
-        }
-        if (!shouldIgnoreSearch &&
-            component.name.toLowerCase().contains(searchQuery.toLowerCase())) {
-          return true; // Inclui componentes na busca por nome
-        }
-        return false;
-      }) ??
-          false;
-
-      // Verifica se os filhos do nó correspondem à pesquisa ou aos filtros
-      final childMatches = _filterAndSearchNodes(
-        node.nodes ?? [],
-        searchQuery,
-        filterEnergySensor,
-        filterCritical,
-      );
-
-      final componentMatches = _filterRootComponents(node.components ?? [], searchQuery, filterEnergySensor, filterCritical);
-
-      // Se o nó ou seus componentes ou seus filhos corresponderem, adiciona à lista filtrada
-      if (matchesSearch || matchesComponentFilters || childMatches.isNotEmpty) {
-        filteredNodes.add(
-          NodeEntity(
-            id: node.id,
-            name: node.name,
-            type: node.type,
-            nodes: childMatches,
-            components: componentMatches,
-          ),
-        );
-      }
-    }
-
-    return filteredNodes;
-  }
-
-  List<ComponentEntity> _filterRootComponents(List<ComponentEntity> components,
-      String searchQuery, bool filterEnergySensor, bool filterCritical) {
-    final bool shouldIgnoreSearch = filterEnergySensor || filterCritical;
-
-    return components.where((component) {
-      if (filterEnergySensor && component.sensorType == SensorType.energy) {
-        return true;
-      }
-      if (filterCritical && component.status == Status.alert) {
-        return true;
-      }
-      if (!shouldIgnoreSearch &&
-          (searchQuery.isEmpty ||
-              component.name.toLowerCase().contains(searchQuery.toLowerCase()))) {
-        return true; // Inclui componentes na busca por nome
-      }
-      return false;
-    }).toList();
   }
 }
 
@@ -252,11 +176,13 @@ class FilterRow extends StatelessWidget {
 class AssetTree extends StatelessWidget {
   final List<NodeEntity> nodes;
   final List<ComponentEntity> components; // Componentes na raiz
+  final bool isSearching;
 
   const AssetTree({
     super.key,
     required this.nodes,
     required this.components,
+    required this.isSearching,
   });
 
   @override
@@ -269,9 +195,16 @@ class AssetTree extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start, // Ajuste de alinhamento
           children: [
             // Exibe os nós (localizações e ativos)
-            ...nodes.map((node) => AssetNode(node: node, depth: 0)).toList(),
+            ...nodes
+                .map((node) => AssetNode(
+                      node: node,
+                      depth: 0,
+                      expanded: isSearching,
+                    ))
+                .toList(),
             // Exibe os componentes diretamente na raiz
-            ...components.map((component) => ComponentTile(component: component)),
+            ...components
+                .map((component) => ComponentTile(component: component)),
           ],
         ),
       ),
@@ -283,14 +216,17 @@ class AssetTree extends StatelessWidget {
 class AssetNode extends StatefulWidget {
   final NodeEntity node;
   final int depth; // Adicionado para controle da indentação
+  final bool expanded;
 
-  const AssetNode({super.key, required this.node, this.depth = 10});
+  const AssetNode(
+      {super.key, required this.node, required this.expanded, this.depth = 10});
 
   @override
   State<AssetNode> createState() => _AssetNodeState();
 }
 
-class _AssetNodeState extends State<AssetNode> with SingleTickerProviderStateMixin {
+class _AssetNodeState extends State<AssetNode>
+    with SingleTickerProviderStateMixin {
   bool _isExpanded = false; // Controla o estado de expansão
   late final AnimationController _controller; // Controlador da animação
 
@@ -299,6 +235,9 @@ class _AssetNodeState extends State<AssetNode> with SingleTickerProviderStateMix
     super.initState();
     _controller = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 300));
+    if (widget.expanded) {
+      _toggleExpand();
+    }
   }
 
   @override
@@ -375,7 +314,9 @@ class _AssetNodeState extends State<AssetNode> with SingleTickerProviderStateMix
               children: widget.node.nodes!.map((child) {
                 return AssetNode(
                   node: child,
-                  depth: widget.depth + 1, // Aumenta a indentação para os filhos
+                  depth: widget.depth + 1,
+                  // Aumenta a indentação para os filhos
+                  expanded: widget.expanded,
                 );
               }).toList(),
             ),
@@ -395,7 +336,7 @@ class _AssetNodeState extends State<AssetNode> with SingleTickerProviderStateMix
             child: Column(
               children: widget.node.components!
                   .map((component) => ComponentTile(
-                  component: component, depth: widget.depth + 1))
+                      component: component, depth: widget.depth + 1))
                   .toList(),
             ),
           ),
@@ -422,7 +363,7 @@ class ComponentTile extends StatelessWidget {
               ? Icons.bolt
               : Icons.vibration,
           color:
-          component.status == Status.operating ? Colors.green : Colors.red,
+              component.status == Status.operating ? Colors.green : Colors.red,
         ),
         title: Text(component.name),
       ),
