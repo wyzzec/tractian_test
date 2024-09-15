@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:tractian_test/assets_feature/presentation/bloc/assets_bloc/assets_bloc.dart';
@@ -63,61 +64,60 @@ class _AssetsPageState extends State<AssetsPage> {
         ),
         backgroundColor: Colors.black87,
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: SearchBar(
-                onSearchChanged: _onSearchChanged,
-              ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: SearchBar(
+              onSearchChanged: _onSearchChanged,
             ),
-            FilterRow(
-              filterEnergySensor: filterEnergySensor,
-              filterCritical: filterCritical,
-              onFilterEnergySensorChanged: (selected) {
-                setState(() {
-                  filterEnergySensor = selected;
-                  _onSearchChanged(
-                      searchQuery); // Aplica o filtro junto à pesquisa
-                });
-              },
-              onFilterCriticalChanged: (selected) {
-                setState(() {
-                  filterCritical = selected;
-                  _onSearchChanged(
-                      searchQuery); // Aplica o filtro junto à pesquisa
-                });
-              },
-            ),
-            BlocBuilder<AssetsBloc, AssetsState>(
-              bloc: _assetsBloc,
-              builder: (context, state) {
-                if (state is AssetsLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                } else if (state is AssetsLoaded) {
-                  return AssetTree(
-                    nodes: state.assets.nodes,
-                    components: state.assets.components,
-                    isSearching: filterEnergySensor ||
-                        filterCritical ||
-                        searchQuery.isNotEmpty,
-                  );
-                } else if (state is AssetsError) {
-                  return Center(child: Text(state.message));
-                } else {
-                  return Container();
-                }
-              },
-            ),
-          ],
-        ),
+          ),
+          FilterRow(
+            filterEnergySensor: filterEnergySensor,
+            filterCritical: filterCritical,
+            onFilterEnergySensorChanged: (selected) {
+              setState(() {
+                filterEnergySensor = selected;
+                _onSearchChanged(searchQuery);
+              });
+            },
+            onFilterCriticalChanged: (selected) {
+              setState(() {
+                filterCritical = selected;
+                _onSearchChanged(searchQuery);
+              });
+            },
+          ),
+          BlocBuilder<AssetsBloc, AssetsState>(
+            bloc: _assetsBloc,
+            builder: (context, state) {
+              if (state is AssetsLoading) {
+                return SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.5,
+                  child: const Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (state is AssetsLoaded) {
+                return AssetTree(
+                  nodes: state.assets.nodes,
+                  components: state.assets.components,
+                  isSearching: filterEnergySensor ||
+                      filterCritical ||
+                      searchQuery.isNotEmpty,
+                );
+              }
+              if (state is AssetsError) {
+                return Center(child: Text(state.message));
+              }
+              return Container();
+            },
+          ),
+        ],
       ),
     );
   }
 }
 
-// Widget para a barra de busca
 class SearchBar extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
 
@@ -127,7 +127,7 @@ class SearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextField(
       decoration: InputDecoration(
-        hintText: 'Buscar Ativo ou Local',
+        hintText: 'Buscar ativos ou locais',
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
         ),
@@ -137,7 +137,6 @@ class SearchBar extends StatelessWidget {
   }
 }
 
-// Widget para os filtros
 class FilterRow extends StatelessWidget {
   final bool filterEnergySensor;
   final bool filterCritical;
@@ -155,15 +154,36 @@ class FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
-        FilterChip(
-          label: const Text('Sensor de Energia'),
-          selected: filterEnergySensor,
-          onSelected: onFilterEnergySensorChanged,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: FilterChip(
+            label: const Row(
+              children: [
+                Icon(
+                  Icons.bolt,
+                  size: 20,
+                ),
+                Text('Sensor de Energia'),
+              ],
+            ),
+            selected: filterEnergySensor,
+            onSelected: onFilterEnergySensorChanged,
+          ),
         ),
         FilterChip(
-          label: const Text('Crítico'),
+          label: const Row(
+            children: [
+              Icon(
+                CupertinoIcons.exclamationmark_circle,
+                size: 20,
+              ),
+              SizedBox(
+                width: 5,
+              ),
+              Text('Crítico'),
+            ],
+          ),
           selected: filterCritical,
           onSelected: onFilterCriticalChanged,
         ),
@@ -172,10 +192,9 @@ class FilterRow extends StatelessWidget {
   }
 }
 
-// Widget para exibir a árvore de ativos e localizações
 class AssetTree extends StatelessWidget {
   final List<NodeEntity> nodes;
-  final List<ComponentEntity> components; // Componentes na raiz
+  final List<ComponentEntity> components;
   final bool isSearching;
 
   const AssetTree({
@@ -192,19 +211,34 @@ class AssetTree extends StatelessWidget {
       child: SizedBox(
         width: MediaQuery.of(context).size.width * 1.05,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, // Ajuste de alinhamento
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Exibe os nós (localizações e ativos)
-            ...nodes
-                .map((node) => AssetNode(
-                      node: node,
-                      depth: 0,
-                      expanded: isSearching,
-                    ))
-                .toList(),
-            // Exibe os componentes diretamente na raiz
-            ...components
-                .map((component) => ComponentTile(component: component)),
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.726,
+              child: ListView.builder(
+                itemCount: nodes.length + components.length,
+                itemBuilder: (BuildContext context, int index) {
+                  if (index < nodes.length) {
+                    return AssetNode(
+                        node: nodes[index], expanded: isSearching, depth: 0);
+                  }
+                  return ComponentTile(
+                    component: components[index - nodes.length],
+                  );
+                },
+              ),
+            ),
+
+            // ...nodes
+            //     .map((node) => AssetNode(
+            //           node: node,
+            //           depth: 0,
+            //           expanded: isSearching,
+            //         ))
+            //     .toList(),
+            // ...components
+            //     .map((component) => ComponentTile(component: component)),
           ],
         ),
       ),
@@ -212,10 +246,9 @@ class AssetTree extends StatelessWidget {
   }
 }
 
-// Widget para exibir cada nó da árvore (localização ou ativo)
 class AssetNode extends StatefulWidget {
   final NodeEntity node;
-  final int depth; // Adicionado para controle da indentação
+  final int depth;
   final bool expanded;
 
   const AssetNode(
@@ -227,8 +260,8 @@ class AssetNode extends StatefulWidget {
 
 class _AssetNodeState extends State<AssetNode>
     with SingleTickerProviderStateMixin {
-  bool _isExpanded = false; // Controla o estado de expansão
-  late final AnimationController _controller; // Controlador da animação
+  bool _isExpanded = false;
+  late final AnimationController _controller;
 
   @override
   void initState() {
@@ -277,7 +310,7 @@ class _AssetNodeState extends State<AssetNode>
                 Icon(
                   widget.node.type == NodeType.location
                       ? Icons.location_on
-                      : Icons.inventory_2,
+                      : Icons.all_inbox_outlined,
                 ),
                 const SizedBox(width: 2),
                 Text(widget.node.name,
@@ -302,20 +335,20 @@ class _AssetNodeState extends State<AssetNode>
       if (widget.node.nodes != null)
         Padding(
           padding: const EdgeInsets.only(left: 11.0),
-          // Espaçamento entre pai e filhos
           child: Container(
             decoration: const BoxDecoration(
               border: Border(
-                  left: BorderSide(
-                      color: Colors.blue,
-                      width: 2)), // Linha vertical à esquerda
+                left: BorderSide(
+                  color: Colors.blue,
+                  width: 2,
+                ),
+              ),
             ),
             child: Column(
               children: widget.node.nodes!.map((child) {
                 return AssetNode(
                   node: child,
                   depth: widget.depth + 1,
-                  // Aumenta a indentação para os filhos
                   expanded: widget.expanded,
                 );
               }).toList(),
@@ -325,18 +358,23 @@ class _AssetNodeState extends State<AssetNode>
       if (widget.node.components != null)
         Padding(
           padding: const EdgeInsets.only(left: 11.0),
-          // Espaçamento entre pai e componentes
           child: Container(
             decoration: const BoxDecoration(
               border: Border(
-                  left: BorderSide(
-                      color: Colors.blue,
-                      width: 2)), // Linha vertical à esquerda
+                left: BorderSide(
+                  color: Colors.blue,
+                  width: 2,
+                ),
+              ),
             ),
             child: Column(
               children: widget.node.components!
-                  .map((component) => ComponentTile(
-                      component: component, depth: widget.depth + 1))
+                  .map(
+                    (component) => ComponentTile(
+                      component: component,
+                      depth: widget.depth + 1,
+                    ),
+                  )
                   .toList(),
             ),
           ),
@@ -345,7 +383,6 @@ class _AssetNodeState extends State<AssetNode>
   }
 }
 
-// Widget para exibir cada componente na árvore
 class ComponentTile extends StatelessWidget {
   final ComponentEntity component;
   final int depth;
@@ -356,7 +393,6 @@ class ComponentTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(left: depth.toDouble()),
-      // Indentação para componentes
       child: ListTile(
         leading: Icon(
           component.sensorType == SensorType.energy

@@ -1,4 +1,5 @@
 import 'package:bloc/bloc.dart';
+import 'package:tractian_test/assets_feature/data/services/isolate_service.dart';
 import 'package:tractian_test/assets_feature/domain/entities/root_entity.dart';
 import 'dart:async';
 import '../../../data/services/assets_feature_service.dart';
@@ -11,125 +12,177 @@ part 'assets_bloc_state.dart';
 
 class AssetsBloc extends Cubit<AssetsState> {
   final IAssetsFeatureService service;
-  Timer? _debounce; // Timer para debouncer
+  Timer? _debounce;
 
   AssetsBloc({required this.service}) : super(AssetsInitial());
+
+  late final RootEntity _rootEntity;
 
   void fetchAssets(String companyId) async {
     try {
       emit(AssetsLoading());
-      final assets = await service.fetchNodes(companyId);
-      emit(AssetsLoaded(assets: assets));
+      _rootEntity = await service.fetchNodes(companyId);
+      emit(AssetsLoaded(assets: _rootEntity));
     } catch (e) {
       emit(AssetsError(message: "Failed to load assets"));
     }
   }
 
-  // Adicionando função para pesquisa com debounce
   void searchAssets(
-      String query,
-      String companyId, {
-        required bool filterEnergySensor,
-        required bool filterCritical,
-      }) {
+    String query,
+    String companyId, {
+    required bool filterEnergySensor,
+    required bool filterCritical,
+  }) async {
+    if (query.isEmpty && !filterEnergySensor && !filterCritical) {
+      emit(
+        AssetsLoaded(
+          assets: _rootEntity,
+        ),
+      );
+      return;
+    }
     if (_debounce?.isActive ?? false) _debounce?.cancel();
+    _debounce = Timer(
+      const Duration(milliseconds: 500),
+      () async {
+        try {
+          emit(AssetsLoading());
+          final List<NodeEntity> filteredNodes = await _filterAndSearchNodes(
+            _rootEntity.nodes,
+            query,
+            filterEnergySensor,
+            filterCritical,
+          );
+          final List<ComponentEntity> filteredComponents =
+              await _filterRootComponents(
+            _rootEntity.components,
+            query,
+            filterEnergySensor,
+            filterCritical,
+          );
 
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
-      try {
-        emit(AssetsLoading()); // Exibe estado de carregamento enquanto pesquisa
-
-        final assets = await service.fetchNodes(companyId);
-
-        final filteredNodes = _filterAndSearchNodes(
-          assets.nodes,
-          query,
-          filterEnergySensor,
-          filterCritical,
-        );
-        final filteredComponents = _filterRootComponents(
-          assets.components,
-          query,
-          filterEnergySensor,
-          filterCritical,
-        );
-
-        emit(AssetsLoaded(assets: RootEntity(nodes: filteredNodes, components: filteredComponents)));
-      } catch (e) {
-        emit(AssetsError(message: "Failed to search assets"));
-      }
-    });
+          emit(
+            AssetsLoaded(
+              assets: RootEntity(
+                nodes: filteredNodes,
+                components: filteredComponents,
+              ),
+            ),
+          );
+        } catch (e) {
+          emit(AssetsError(message: "Failed to search assets"));
+        }
+      },
+    );
   }
 
-  List<NodeEntity> _filterAndSearchNodes(
-      List<NodeEntity> nodes,
-      String searchQuery,
-      bool filterEnergySensor,
-      bool filterCritical,
-      ) {
-    List<NodeEntity> filteredNodes = [];
+  static Future<List<NodeEntity>> _filterAndSearchNodes(
+    List<NodeEntity> nodes,
+    String searchQuery,
+    bool filterEnergySensor,
+    bool filterCritical,
+  ) async {
+    final bool shouldIgnoreSearch = filterEnergySensor || filterCritical;
 
-    for (var node in nodes) {
-      // Verifica se o filtro de sensor de energia ou crítico está ativado
-      final bool shouldIgnoreSearch = filterEnergySensor || filterCritical;
+    final List<NodeEntity> filteredNodes = await runIsolate(() async {
+      List<NodeEntity> isolateFilteredNodes = [];
 
-      // Verifica se o nome do nó corresponde à pesquisa
-      final matchesSearch = !shouldIgnoreSearch &&
-          (searchQuery.isEmpty || node.name.toLowerCase().contains(searchQuery.toLowerCase()));
+      for (var node in nodes) {
+        final matchesSearch = !shouldIgnoreSearch &&
+            (searchQuery.isEmpty ||
+                node.name.toLowerCase().contains(searchQuery.toLowerCase()));
 
-      // Verifica se os componentes do nó correspondem aos filtros
-      final matchesComponentFilters = node.components?.any((component) {
-        if (filterEnergySensor && component.sensorType == SensorType.energy) {
-          return true;
+        bool matchesComponentFilters = false;
+        if (node.components != null) {
+          for (var component in node.components!) {
+            if (filterEnergySensor &&
+                component.sensorType == SensorType.energy) {
+              matchesComponentFilters = true;
+              break;
+            }
+            if (filterCritical && component.status == Status.alert) {
+              matchesComponentFilters = true;
+              break;
+            }
+            if (!shouldIgnoreSearch &&
+                component.name
+                    .toLowerCase()
+                    .contains(searchQuery.toLowerCase())) {
+              matchesComponentFilters = true;
+              break;
+            }
+          }
         }
-        if (filterCritical && component.status == Status.alert) {
-          return true;
-        }
-        if (!shouldIgnoreSearch &&
-            component.name.toLowerCase().contains(searchQuery.toLowerCase())) {
-          return true;
-        }
-        return false;
-      }) ??
-          false;
 
-      // Verifica os filhos do nó
-      final childMatches = _filterAndSearchNodes(node.nodes ?? [], searchQuery, filterEnergySensor, filterCritical);
-      final componentMatches = _filterRootComponents(node.components ?? [], searchQuery, filterEnergySensor, filterCritical);
+        final childMatches = await _filterAndSearchNodes(
+          node.nodes ?? [],
+          searchQuery,
+          filterEnergySensor,
+          filterCritical,
+        );
 
-      if (matchesSearch || matchesComponentFilters || childMatches.isNotEmpty) {
-        filteredNodes.add(NodeEntity(
-          id: node.id,
-          name: node.name,
-          type: node.type,
-          nodes: childMatches,
-          components: componentMatches,
-        ));
+        final componentMatches = await _filterRootComponents(
+          node.components ?? [],
+          searchQuery,
+          filterEnergySensor,
+          filterCritical,
+        );
+
+        if (matchesSearch ||
+            matchesComponentFilters ||
+            childMatches.isNotEmpty) {
+          isolateFilteredNodes.add(NodeEntity(
+            id: node.id,
+            name: node.name,
+            type: node.type,
+            nodes: childMatches,
+            components: componentMatches,
+          ));
+        }
       }
-    }
+      return isolateFilteredNodes;
+    });
 
     return filteredNodes;
   }
 
-  List<ComponentEntity> _filterRootComponents(
-      List<ComponentEntity> components,
-      String searchQuery,
-      bool filterEnergySensor,
-      bool filterCritical,
-      ) {
+  static Future<List<ComponentEntity>> _filterRootComponents(
+    List<ComponentEntity> components,
+    String searchQuery,
+    bool filterEnergySensor,
+    bool filterCritical,
+  ) async {
     final bool shouldIgnoreSearch = filterEnergySensor || filterCritical;
+    List<ComponentEntity> filteredComponents = [];
 
-    return components.where((component) {
-      if (filterEnergySensor && component.sensorType == SensorType.energy) {
-        return true;
+    filteredComponents = await runIsolate(() async {
+      List<ComponentEntity> isolateFilteredComponents = [];
+
+      for (var component in components) {
+        bool matches = false;
+        if (filterEnergySensor && component.sensorType == SensorType.energy) {
+          matches = true;
+        }
+        if (filterCritical && component.status == Status.alert) {
+          matches = true;
+        }
+        if (!shouldIgnoreSearch &&
+            (searchQuery.isEmpty ||
+                component.name
+                    .toLowerCase()
+                    .contains(searchQuery.toLowerCase()))) {
+          matches = true;
+        }
+
+        if (matches) {
+          isolateFilteredComponents.add(component);
+        }
       }
-      if (filterCritical && component.status == Status.alert) {
-        return true;
-      }
-      if (!shouldIgnoreSearch && (searchQuery.isEmpty || component.name.toLowerCase().contains(searchQuery.toLowerCase()))) {
-        return true;
-      }
-      return false;
-    }).toList();
+      return isolateFilteredComponents;
+    });
+
+    return filteredComponents;
   }
 
   @override

@@ -5,7 +5,6 @@ import '../../../domain/entities/company_entity.dart';
 
 part 'company_state.dart';
 
-// O Cubit que gerencia o estado
 class CompanyBloc extends Cubit<CompanyState> {
   final IAssetsFeatureService service;
 

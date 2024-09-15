@@ -8,6 +8,8 @@ import '../../domain/entities/component_entity.dart';
 import '../../domain/entities/status.dart';
 import 'package:tractian_test/assets_feature/domain/entities/root_entity.dart';
 
+import 'isolate_service.dart';
+
 abstract class IAssetsFeatureService {
   Future<List<CompanyEntity>> fetchCompanies();
 
@@ -39,26 +41,29 @@ final class AssetsFeatureService implements IAssetsFeatureService {
           await _remoteDatasource.fetchAssets(companyId);
 
       final Map<String, NodeEntity> locationMap = {};
-      final List<NodeEntity> nodes =
-          _processLocations(locationsData, locationMap);
 
-      final RootEntity rootEntity = RootEntity(nodes: nodes, components: []);
-      _processAssets(assetsData, rootEntity);
+      final RootEntity processedRootEntity = await runIsolate<RootEntity>(
+        () async {
+          final List<NodeEntity> nodes =
+              _processLocations(locationsData, locationMap);
+          final rootEntity = RootEntity(nodes: nodes, components: []);
+          _processAssets(assetsData, rootEntity);
+          return rootEntity;
+        },
+      );
 
-      return rootEntity;
+      return processedRootEntity;
     } catch (e, s) {
       log('Error fetching nodes in AssetsFeatureService\n$e\n$s');
       rethrow;
     }
   }
 
-  // Mapeia os dados da empresa
   CompanyEntity _mapToCompanyEntity(Map<String, dynamic> map) {
     return CompanyEntity(id: map[kId], name: map[kName]);
   }
 
-  // Mapeia os dados de componentes
-  ComponentEntity _mapToComponentEntity(Map<String, dynamic> map) {
+  static ComponentEntity _mapToComponentEntity(Map<String, dynamic> map) {
     Status status;
     SensorType sensorType;
     if (map[kStatus] == kOperating) {
@@ -76,8 +81,8 @@ final class AssetsFeatureService implements IAssetsFeatureService {
         name: map[kName] as String, status: status, sensorType: sensorType);
   }
 
-  // Processa e mapeia as localizações e resolve nós órfãos
-  List<NodeEntity> _processLocations(List<Map<String, dynamic>> locationsData,
+  static List<NodeEntity> _processLocations(
+      List<Map<String, dynamic>> locationsData,
       Map<String, NodeEntity> locationMap) {
     final List<Map<String, dynamic>> orphanedLocations = [];
     final List<NodeEntity> nodes = [];
@@ -101,7 +106,6 @@ final class AssetsFeatureService implements IAssetsFeatureService {
           orphanedLocations.add(location);
         }
       } else {
-        // Adiciona nó raiz
         nodes.add(node);
       }
     }
@@ -110,8 +114,7 @@ final class AssetsFeatureService implements IAssetsFeatureService {
     return nodes;
   }
 
-  // Processa ativos e componentes
-  void _processAssets(
+  static void _processAssets(
       List<Map<String, dynamic>> assetsData, RootEntity rootEntity) {
     final List<Map<String, dynamic>> orphanedAssets = [];
     final List<Map<String, dynamic>> orphanedComponents = [];
@@ -130,7 +133,6 @@ final class AssetsFeatureService implements IAssetsFeatureService {
             orphanedComponents.add(asset);
           }
         } else {
-          // Se não tem parentId ou locationId, adiciona o componente na raiz
           rootEntity.components.add(component);
         }
       } else {
@@ -142,8 +144,7 @@ final class AssetsFeatureService implements IAssetsFeatureService {
     _resolveOrphanedComponents(orphanedComponents, rootEntity);
   }
 
-  // Processa ativo que não é um componente
-  void _processAssetWithoutComponent(Map<String, dynamic> asset,
+  static void _processAssetWithoutComponent(Map<String, dynamic> asset,
       RootEntity rootEntity, List<Map<String, dynamic>> orphanedAssets) {
     final node = NodeEntity(
       id: asset[kId],
@@ -163,13 +164,11 @@ final class AssetsFeatureService implements IAssetsFeatureService {
         orphanedAssets.add(asset);
       }
     } else {
-      // Se não tem parentId ou locationId, adiciona o ativo na raiz
       rootEntity.nodes.add(node);
     }
   }
 
-  // Resolve localizações órfãs
-  void _resolveOrphanedLocations(
+  static void _resolveOrphanedLocations(
       List<Map<String, dynamic>> orphanedLocations, List<NodeEntity> nodes) {
     bool hasResolvedAnyLocation = true;
 
@@ -189,7 +188,7 @@ final class AssetsFeatureService implements IAssetsFeatureService {
             components: [],
           );
           parentNode.nodes?.add(node);
-          hasResolvedAnyLocation = true; // Uma localização foi resolvida
+          hasResolvedAnyLocation = true;
         } else {
           unresolvedLocations.add(orphanedLocation);
         }
@@ -199,14 +198,12 @@ final class AssetsFeatureService implements IAssetsFeatureService {
       orphanedLocations.addAll(unresolvedLocations);
     }
 
-    // Se restarem localizações órfãs, lança uma exceção
     if (orphanedLocations.isNotEmpty) {
       log('Inconsistent data: Some locations could not be resolved.');
     }
   }
 
-  // Resolve ativos órfãos
-  void _resolveOrphanedAssets(
+  static void _resolveOrphanedAssets(
       List<Map<String, dynamic>> orphanedAssets, RootEntity rootEntity) {
     bool hasResolvedAnyAsset = true;
 
@@ -228,7 +225,7 @@ final class AssetsFeatureService implements IAssetsFeatureService {
             components: [],
           );
           parentNode.nodes?.add(node);
-          hasResolvedAnyAsset = true; // Um ativo foi resolvido
+          hasResolvedAnyAsset = true;
         } else {
           unresolvedAssets.add(orphanedAsset);
         }
@@ -238,18 +235,15 @@ final class AssetsFeatureService implements IAssetsFeatureService {
       orphanedAssets.addAll(unresolvedAssets);
     }
 
-    // Se restarem ativos órfãos, lança uma exceção
     if (orphanedAssets.isNotEmpty) {
       log('Inconsistent data: Some assets could not be resolved.');
     }
   }
 
-  // Resolve componentes órfãos
-  void _resolveOrphanedComponents(
+  static void _resolveOrphanedComponents(
       List<Map<String, dynamic>> orphanedComponents, RootEntity rootEntity) {
     bool hasResolvedAnyComponent = true;
 
-    // Continua tentando até que não haja mais componentes órfãos a serem resolvidos
     while (hasResolvedAnyComponent) {
       hasResolvedAnyComponent = false;
       final List<Map<String, dynamic>> unresolvedComponents = [];
@@ -262,32 +256,28 @@ final class AssetsFeatureService implements IAssetsFeatureService {
           NodeEntity? parentNode =
               _findParentNodeInTree(rootEntity.nodes, parentId);
 
-          // Se o nó pai foi encontrado, adiciona o componente
           if (parentNode != null) {
             final ComponentEntity component =
                 _mapToComponentEntity(orphanedComponent);
             parentNode.components?.add(component);
-            hasResolvedAnyComponent = true; // Um componente foi resolvido
+            hasResolvedAnyComponent = true;
           } else {
-            // Adiciona à lista de componentes não resolvidos para tentar na próxima iteração
             unresolvedComponents.add(orphanedComponent);
           }
         }
       }
 
-      // Atualiza a lista de componentes órfãos para os não resolvidos
       orphanedComponents.clear();
       orphanedComponents.addAll(unresolvedComponents);
     }
 
-    // Se restarem componentes órfãos, lança uma exceção
     if (orphanedComponents.isNotEmpty) {
       log('Inconsistent data: Some components could not be resolved.');
     }
   }
 
-  // Função auxiliar para buscar recursivamente o pai em qualquer nível da árvore
-  NodeEntity? _findParentNodeInTree(List<NodeEntity> nodes, String parentId) {
+  static NodeEntity? _findParentNodeInTree(
+      List<NodeEntity> nodes, String parentId) {
     for (NodeEntity node in nodes) {
       final NodeEntity? parentNode = _findParentNode(node, parentId);
       if (parentNode != null) {
@@ -297,7 +287,7 @@ final class AssetsFeatureService implements IAssetsFeatureService {
     return null;
   }
 
-  NodeEntity? _findParentNode(NodeEntity currentNode, String parentId) {
+  static NodeEntity? _findParentNode(NodeEntity currentNode, String parentId) {
     if (currentNode.id == parentId) {
       return currentNode;
     }
@@ -312,17 +302,14 @@ final class AssetsFeatureService implements IAssetsFeatureService {
     return null;
   }
 
-  // Verifica se a localização ou ativo tem um pai
-  bool _hasParent(Map<String, dynamic> data) {
+  static bool _hasParent(Map<String, dynamic> data) {
     return data[kParentId] != null;
   }
 
-  // Verifica se o ativo é um componente
-  bool _isComponent(Map<String, dynamic> asset) {
+  static bool _isComponent(Map<String, dynamic> asset) {
     return asset[kSensorType] != null;
   }
 
-  // Constantes
   static const kId = 'id';
   static const kName = 'name';
   static const kStatus = 'status';
