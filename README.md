@@ -18,6 +18,7 @@ These techniques together provide a robust and scalable solution for managing an
 ## Improvement points:
 - Display search or filter progress to the user.
 - Ensure that text search operates on the results of the "energy sensor" and "critical" filters.
+- Improve responsiveness for various screen sizes.
 - Improve code clarity.
 
 ### Video link: 
