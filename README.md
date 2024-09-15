@@ -20,3 +20,7 @@ These techniques together provide a robust and scalable solution for managing an
 - Ensure that text search operates on the results of the "energy sensor" and "critical" filters.
 - Improve code clarity.
 
+### Video link: 
+https://drive.google.com/file/d/1Pg4255lmBWShGWb5ZUdEMZnuKtzM3IXu/view?usp=sharing
+
+The APK and video are available in the github repository.
