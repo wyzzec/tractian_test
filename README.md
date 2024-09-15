@@ -2,15 +2,21 @@
 
 technical challenge for tractian hiring process
 
-## Getting Started
+## How it work
 
-This project is a starting point for a Flutter application.
+This application is a tool for visualizing and searching assets and components of a company in a tree structure, such as locations and sensors.
 
-A few resources to get you started if this is your first Flutter project:
+This application utilizes several advanced techniques to manage and display large datasets effectively, including:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+- Bloc State Management.
+- Isolate for Concurrent Data Processing To handle performance-intensive tasks like filtering and searching through large sets of assets and components.
+- Search and Filtering with Debouncing.
+- Recursive Filtering Algorithm.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+These techniques together provide a robust and scalable solution for managing and visualizing complex datasets in real time while maintaining high performance and responsiveness.
+
+## Improvement points:
+- Display search or filter progress to the user.
+- Ensure that text search operates on the results of the "energy sensor" and "critical" filters.
+- Improve code clarity.
+
